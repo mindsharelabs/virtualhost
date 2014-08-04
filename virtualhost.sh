@@ -3,17 +3,18 @@
 action=$1
 domain=$2
 rootdir=$3
-owner=$(who am i | awk '{print $1}')
-email='webmaster@localhost'
+#owner=$(who am i | awk '{print $1}')
+owner=$4
+group=$5
+email='info@mindsharelabs.com'
 sitesEnable='/etc/apache2/sites-enabled/'
 sitesAvailable='/etc/apache2/sites-available/'
-userDir='/var/www/'
 sitesAvailabledomain=$sitesAvailable$domain.conf
 
 ### don't modify from here unless you know what you are doing ####
  
 if [ "$(whoami)" != 'root' ]; then
-  	echo "You have no permission to run $0 as non-root user. Use sudo"
+  	echo "You have no permission to run $0 as non-root user. Use root."
 		exit 1;
 fi
  
@@ -25,35 +26,44 @@ fi
  
 while [ "$domain" == ""  ]
 do
-	echo -e "Please provide domain. e.g.dev,staging"
+	echo -e "Please provide domain. e.g. domain.dev"
 	read  domain
 done
  
-if [ "$rootdir" == "" ]; then
-	rootdir=${domain//./}
-fi
- 
 if [ "$action" == 'create' ] 
 	then
+
+		if [ "$rootdir" == "" ]; then
+			owner='www-data'
+			group='www-data'
+		fi
+
+		if [ "$rootdir" == "" ]; then
+			#rootdir=${domain//./}
+			echo "Pease provide www directory relative to / root."
+			exit 1;
+		fi
+
 		### check if domain already exists
 		if [ -e $sitesAvailabledomain ]; then
-			echo -e 'This domain already exists.\nPlease Try Another one'
+			echo -e 'This domain already exists.\nPlease try another.'
 			exit;
 		fi
  
 		### check if directory exists or not
-		if ! [ -d $userDir$rootdir ]; then
+		if ! [ -d "$rootdir" ]; then
 			### create the directory
-			mkdir $userDir$rootdir
+			mkdir "$rootdir"
 			### give permission to root dir
-			chmod 755 $userDir$rootdir
+			chmod -v 755 "$rootdir"
+			chown -hRv $owner:$group "$rootdir" 
 			### write test file in the new domain dir
-			if ! echo "<?php echo phpinfo(); ?>" > $userDir$rootdir/phpinfo.php
+			if ! echo "<?php echo phpinfo(); ?>" > "$rootdir/phpinfo.php"
 			then
-				echo "ERROR: Not able to write in file "$userDir"/"$rootdir"/phpinfo.php. Please check permissions."
+				echo "ERROR: Not able to write to file "$rootdir"/phpinfo.php. Please check permissions."
 				exit;
 			else
-				echo "Added content to "$userDir$rootdir"/phpinfo.php."
+				echo "Added content to "$rootdir"/phpinfo.php."
 			fi
 		fi
  
@@ -63,12 +73,13 @@ if [ "$action" == 'create' ]
 			ServerAdmin $email
 			ServerName $domain
 			ServerAlias $domain
-			DocumentRoot $userDir$rootdir
+			DocumentRoot "\"$rootdir"\"
 			<Directory />
 				AllowOverride All
 			</Directory>
-			<Directory $userDir$rootdir>
-				Options Indexes FollowSymLinks MultiViews
+			<Directory "\"$rootdir"\" >
+				Options FollowSymLinks MultiViews
+				Options -Indexes 
 				AllowOverride all
 				Require all granted
 			</Directory>
@@ -77,7 +88,7 @@ if [ "$action" == 'create' ]
 			CustomLog /var/log/apache2/$domain-access.log combined
 		</VirtualHost>" > $sitesAvailabledomain
 		then
-			echo -e 'There is an ERROR create $domain file'
+			echo -e "ERROR creating $sitesAvailabledomain file"
 			exit;
 		else
 			echo -e '\nNew Virtual Host Created\n'
@@ -86,16 +97,16 @@ if [ "$action" == 'create' ]
 		### Add domain in /etc/hosts
 		if ! echo "127.0.0.1	$domain" >> /etc/hosts
 		then
-			echo "ERROR: Not able write in /etc/hosts"
+			echo "ERROR: Not able write to /etc/hosts"
 			exit;
 		else
 			echo -e "Host added to /etc/hosts file \n"
 		fi
  
 		if [ "$owner" == ""  ]; then
-			chown -R $(whoami):$(whoami) $userDir$rootdir
+			chown -R $(whoami):$(whoami) "$rootdir"
 		else
-			chown -R $owner:$owner $userDir$rootdir
+			chown -R $owner:$group "$rootdir"
 		fi
 
 		### enable website
@@ -105,12 +116,12 @@ if [ "$action" == 'create' ]
 		/etc/init.d/apache2 reload
  
 		### show the finished message
-		echo -e "Complete! \nYou now have a new Virtual Host \nYour new host is: http://"$domain" \nAnd its located at "$userDir$rootdir
+		echo -e "Complete! \nYou now have a new Apache2 Virtual Host. \nYour new host is: http://"$domain" \nAnd it is located at $rootdir"
 		exit;
 	else
 		### check whether domain already exists
 		if ! [ -e $sitesAvailabledomain ]; then
-			echo -e 'This domain dont exists.\nPlease Try Another one'
+			echo -e 'This domain does not exist.\nTry another?'
 			exit;
 		else
 			### Delete domain in /etc/hosts
@@ -124,23 +135,29 @@ if [ "$action" == 'create' ]
 			/etc/init.d/apache2 reload
 
 			### Delete virtual host rules files
-			rm $sitesAvailabledomain
+			rm -v $sitesAvailabledomain
 		fi
+
+		while [ "$rootdir" == ""  ]
+		do
+			echo -e "To delete the document root please provide the absolute path, leave blank to preserve files."
+			read  rootdir
+		done
  
 		### check if directory exists or not
-		if [ -d $userDir$rootdir ]; then
-			echo -e 'Delete host root directory ? (s/n)'
+		if [ -d "$rootdir" ]; then
+			echo -e "Really delete all files under $rootdir? (y/n)"
 			read deldir
 
-			if [ "$deldir" == 's' -o "$deldir" == 'S' ]; then
+			if [ "$deldir" == 'y' -o "$deldir" == 'Y' ]; then
 				### Delete the directory
-				rm -rf $userDir$rootdir
-				echo -e 'Directory deleted'
+				rm -rv "$rootdir"
+				echo -e 'Directory deleted.'
 			else
-				echo -e 'Host directory conserved'
+				echo -e 'Host directory preserved.'
 			fi
 		else
-			echo -e 'Host directory not found. Ignored'
+			echo -e 'Host directory not found. Ignored.'
 		fi
  
 		### show the finished message
