@@ -14,19 +14,19 @@ sitesAvailabledomain=$sitesAvailable$domain.conf
 ### don't modify from here unless you know what you are doing ####
  
 if [ "$(whoami)" != 'root' ]; then
-  	echo "You have no permission to run $0 as non-root user. Use root."
+  	echo "You don't have permission to run $0 as non-root user. Use root."
 		exit 1;
 fi
  
 if [ "$action" != 'create' ] && [ "$action" != 'delete' ] 
 	then
-		echo "You need to prompt for action (create or delete) -- Lower-case only"
+		echo "Please specify an action (create or delete) -- case sensitive"
 		exit 1;
 fi
  
 while [ "$domain" == ""  ]
 do
-	echo -e "Please provide domain. e.g. domain.dev"
+	echo -e "Please provide domain, e.g. domain.dev"
 	read  domain
 done
  
@@ -138,11 +138,10 @@ if [ "$action" == 'create' ]
 			rm -v $sitesAvailabledomain
 		fi
 
-		while [ "$rootdir" == ""  ]
-		do
-			echo -e "To delete the document root please provide the absolute path, leave blank to preserve files."
+		if [ "$rootdir" == ""  ]; then
+			echo -e "To delete the document root please enter the absolute path, leave blank (press enter) to preserve files."
 			read  rootdir
-		done
+		fi
  
 		### check if directory exists or not
 		if [ -d "$rootdir" ]; then
