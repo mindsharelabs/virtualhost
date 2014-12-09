@@ -20,7 +20,7 @@ fi
  
 if [ "$action" != 'create' ] && [ "$action" != 'delete' ] 
 	then
-		echo "Please specify an action (create or delete) -- case sensitive"
+		echo "Spcify an action --action [create | delete]"
 		exit 1;
 fi
  
