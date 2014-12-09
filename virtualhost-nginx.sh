@@ -16,14 +16,12 @@
 # GNU General Public License at <http://www.gnu.org/licenses/> for
 # more details.
 
-# Usage: virtualhost-nginx.sh [-h|--help] [-h|--help] [-a|--action create] [-o|--owner www-data]
-
 # Revision history:
 # 2014-12-08 Created by new_script ver. 3.3
 # ---------------------------------------------------------------------------
 
 PROGNAME=${0##*/}
-VERSION="0.1"
+VERSION="0.1.1"
 
 # Colors
 ESC_SEQ="\x1b["
@@ -74,15 +72,17 @@ help_message() {
 	cat <<- _EOF_
 	$PROGNAME ver. $VERSION
 
-  $(usage)
+	$(usage)
 
-  Options:
-  -h, --help	Display this help message and exit.
-  -a, --action	[create | delete] Create or delete a virtual host.
-  -o, --owner www-data  Web server user
-    Where 'www-data' is the Default user.
+	Options:
+	-h, --help	Display this help message and exit.
+	-a, --action	[create | delete] Create or delete a virtual host.
+	-o, --owner 	Web server username. Default root
+	-g, --group 	Web server group. Default www-data
+	-p, --octal 	Web server octal permissions for folders. Default 755
+	--nginx 	Web server path. Default /etc/nginx/
 
-  NOTE: You must be the superuser to run this script.
+	NOTE: You must be the superuser to run this script.
 
 	_EOF_
 	return
@@ -91,11 +91,6 @@ help_message() {
 # Trap signals
 trap "signal_exit TERM" TERM HUP
 trap "signal_exit INT" INT
-
-# Check for root UID
-if [[ $(id -u) != 0 ]]; then
-	error_exit "You must be the superuser to run $0."
-fi
 
 # Parse command-line
 while [[ -n $1 ]]; do
@@ -125,6 +120,10 @@ while [[ -n $1 ]]; do
 			#echo "Port: $1";
 			create="$1" ;
 			port=$1;;
+		--octal)
+			shift;
+			create="$1" ;
+			octal=$1;;
 		--nginx)
 			shift;
 			#echo "nginx path: $1";
@@ -139,11 +138,18 @@ while [[ -n $1 ]]; do
 	shift
 done
 
+
+# Check for root UID
+if [[ $(id -u) != 0 ]]; then
+	error_exit "You must be the superuser to run $0."
+fi
+
 # Main logic
 
 defaultWebroot='/var/www/'
 defaultPort="80"
 defaultGroup="www-data"
+defaultPerms=755
 
 if [ "$nginxPath" == "" ]; then
 	nginxPath="/etc/nginx/"
@@ -168,17 +174,22 @@ if [ "$action" == "create"  ]; then
 	if [ "$port" == ""  ]; then
 		read -p "Please provide a port [$defaultPort]: " port
 		port=${port:-$defaultPort}
-		echo $port
+		echo -e $COL_BLUE"Using port "$port$COL_RESET
+	fi
+	if [ "$octal" == ""  ]; then
+		read -p "Please provide a vlaue for folder permissions [$defaultPerms]: " octal
+		octal=${octal:-$defaultPerms}
+		echo -e $COL_BLUE"Using "$octal" for chmod"$COL_RESET
 	fi
 
 	if [ "$owner" == "" ]; then
 		owner=$(whoami | awk '{print $1}')
-		echo 'No owner given, setting file ownership to: '$owner
+		echo -e $COL_YELLOW'No owner given, setting file ownership to: '$owner$COL_RESET
 	fi
 
 	if [ "$group" == "" ]; then
 		group=$defaultGroup
-		echo 'No group given, setting group ownership to: '$group
+		echo -e $COL_YELLOW'No group given, setting group ownership to: '$group$COL_RESET
 	fi
 fi
 
@@ -199,7 +210,7 @@ if [ "$action" == 'create' ]
 			### create the directory
 			mkdir $userDir$webroot
 			### give permission to root dir
-			chmod 755 $userDir$webroot
+			chmod $octal $userDir$webroot
 			### write test file in the new domain dir
 			if ! echo "<?php echo phpinfo(); ?>" > $userDir$webroot/phpinfo.php
 			then
@@ -212,7 +223,7 @@ if [ "$action" == 'create' ]
 
 		### create virtual host rules file
 		if ! echo "server {
-	listen   80;
+	listen   $port;
 	root $userDir$webroot;
 	index index.php index.html index.htm;
 	server_name $domain;
@@ -283,7 +294,7 @@ if [ "$action" == 'create' ]
 		service nginx restart
 
 		### show the finished message
-		echo -e "Complete! \nYou now have a new nginx Virtual Host. \nYour new host is: http://"$domain" \nAnd it is located at $rootdir"
+		echo -e $COL_GREEN"Complete! \nYou now have a new nginx Virtual Host. \nYour new host is: http://"$domain" \nAnd it is located at $rootdir"$COL_RESET
 		exit;
 	else
 		### check whether domain already exists
