@@ -1,7 +1,7 @@
 nginx/apache virtualhost manager
 ===========
 
-Bash Scripts to easily create or delete Apache or nginx virtual hosts on Debian/Ubuntu quickly.
+Bash scripts to easily (interactively) create or delete Apache and nginx virtual hosts on Debian/Ubuntu quickly.
 
 ## Installation ##
 
@@ -58,3 +58,10 @@ to delete a virtual host
 to delete a virtual host with custom directory name:
 
     $ sudo virtualhost delete anothersite.dev my_dir
+
+## Roadmap ##
+
+* Add HHVM options
+* Update Apache to match nginx syntax
+* tweak nginx config
+* add installer?
