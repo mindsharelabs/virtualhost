@@ -53,7 +53,7 @@ signal_exit() { # Handle trapped signals
 		INT)
 			error_exit $COL_RED"Program interrupted by user"$COL_RESET ;;
 		TERM)
-			echo -e $COL_RED"\n$PROGNAME: Program terminated"$COL_RESET >&2
+        	echo -e "\n"$PROGNAME": "$COL_RED"Program terminated"$COL_RESET >&2
 			graceful_exit ;;
 		*)
 			error_exit $COL_RED"$PROGNAME: Terminating on unknown signal"$COL_RESET ;;
@@ -61,7 +61,7 @@ signal_exit() { # Handle trapped signals
 }
 
 usage() {
-	echo -e "Usage: $PROGNAME [-h|--help] [-a|--action create|delete] [-d|--domain example.dev]"
+	echo -e "Usage: $PROGNAME [-h|--help] [-a|--action create|delete] [-d|--domain $fakeDomain]"
 }
 
 help_message() {
@@ -79,7 +79,9 @@ help_message() {
 	-a, --action	[create | delete] Create or delete a virtual host.
 	-o, --owner 	Web server username. Default root
 	-g, --group 	Web server group. Default www-data
-	-p, --octal 	Web server octal permissions for folders. Default 755
+	-p, --port 	Web server port. Default 80
+	-w, --webroot 	Web server root path. Default /var/www/domain
+	--octal 	Web server octal permissions for folders. Default 755
 	--nginx 	Web server path. Default /etc/nginx/
 
 	NOTE: You must be the superuser to run this script.
@@ -115,6 +117,10 @@ while [[ -n $1 ]]; do
 			shift;
 			create="$1"
 			owner=$1;;
+		-g | --group)
+			shift;
+			create="$1"
+			group=$1;;
 		-p | --port)
 			shift;
 			#echo "Port: $1";
@@ -138,203 +144,261 @@ while [[ -n $1 ]]; do
 	shift
 done
 
-
 # Check for root UID
 if [[ $(id -u) != 0 ]]; then
-	error_exit "You must be the superuser to run $0."
+	error_exit $COL_RED"You must be the superuser to run $PROGNAME."$COL_RESET
 fi
 
 # Main logic
-
+fakeDomain='example.dev'
 defaultWebroot='/var/www/'
 defaultPort="80"
 defaultGroup="www-data"
 defaultPerms=755
+defaultNginxPath="/etc/nginx/"
+defaultOwner=$(whoami | awk '{print $1}')
 
-if [ "$nginxPath" == "" ]; then
-	nginxPath="/etc/nginx/"
-fi
-
-sitesEnable="$nginxPath/sites-enabled/"
-sitesAvailable="$nginxPath/sites-available/"
 
 if [ "$action" != 'create' ] && [ "$action" != 'delete' ]
 	then
-		echo "Spcify an action --action [create | delete]"
+		echo -e $COL_RED"No action was specified, try one of these:"$COL_RESET
+		echo -e $PROGNAME" -a "$COL_CYAN"create"$COL_RESET
+		echo -e $PROGNAME" -a "$COL_CYAN"delete"$COL_RESET
 		exit 1;
 fi
 
-while [ "$domain" == ""  ]
-do
-	echo -e "Virtual host domain to $action (e.g. domain.dev):"
-	read  domain
-done
+if [ "$nginxPath" == "" ]; then
+	read -p "Specify your nginx install path or hit enter for default [$defaultNginxPath]: " nginxPath
+	nginxPath=${nginxPath:-$defaultNginxPath}
+	echo -e "Using nginx path: "$COL_BLUE$nginxPath$COL_RESET"\n"
+fi
+if [ ! -d "$nginxPath" ]; then
+	echo -e $COL_RED"An invalid nginx path was specified.\nExiting..."$COL_RESET
+		exit 1;
+fi
 
-if [ "$action" == "create"  ]; then
-	if [ "$port" == ""  ]; then
-		read -p "Please provide a port [$defaultPort]: " port
-		port=${port:-$defaultPort}
-		echo -e $COL_BLUE"Using port "$port$COL_RESET
+sitesEnable=$nginxPath"sites-enabled/"
+sitesAvailable=$nginxPath"sites-available/"
+
+#########################
+#    DELETION ROUTINE	#
+#########################
+if [ "$action" == "delete"  ]; then
+
+	echo -e "Select a virtual host to "$COL_RED"delete"$COL_RESET": "
+	shopt -s nullglob # causes the array to be empty if there are no matched
+	hostsAvail=($sitesAvailable*)
+	PS3='Enter a number for the virtual host to delete: '
+	hostsAvail=("${hostsAvail[@]}" "Exit without deleting any virtual hosts.")
+	select FILENAME in "${hostsAvail[@]}"
+	do
+		case $FILENAME in
+			"Exit without deleting any virtual hosts.")
+				echo -e "\n"$PROGNAME": "$COL_YELLOW"Terminated by user."$COL_RESET >&2
+				graceful_exit
+			;;
+			*)
+				strlen=${#sitesAvailable}
+				domain=${FILENAME:$strlen} # trim the path from the domain
+				echo -e "Virtual host selected for "$COL_RED"deletion"$COL_RESET": "$COL_CYAN"$domain"$COL_RESET
+				break
+			;;
+		esac
+	done
+
+
+	if [ "$webroot" == "" ]; then
+		read -p "Specify the web root path for $domain or hit enter for default [$defaultWebroot$domain]: " webroot
+		webroot=${webroot:-$defaultWebroot$domain}
+		echo -e "Web root: "$COL_BLUE$webroot$COL_RESET"\n"
 	fi
+
+	### check whether domain already exists
+	if ! [ -f "$FILENAME" ]; then
+	echo -e $FILENAME
+		echo -e $COL_RED'The virtual host "'$domain'" does not exist.\nExiting...'$COL_RESET
+		graceful_exit
+	else
+		### Delete domain in /etc/hosts
+		echo -e "Removing $domain from /etc/hosts"
+		newhost=${domain//./\\.}
+		sed -i "/$newhost/d" /etc/hosts
+
+		### disable website, if enabled
+		if [ -e "$sitesEnable$domain" ]; then
+			echo -e "Disabling virtual host: "$domain
+			rm -v "$sitesEnable$domain"
+		fi
+
+		### restart Nginx
+		echo -e "Restarting nginx"
+		service nginx restart
+
+		### Delete virtual host rules files
+		rm $FILENAME
+	fi
+
+	### check if directory exists or not
+	if [ -d $webroot ]; then
+		echo -e $COL_MAGENTA"Really delete all files under $webroot? (y/n)"$COL_RESET
+		read deldir
+
+		if [ "$deldir" == 'y' -o "$deldir" == 'Y' ]; then
+			### Delete the directory
+			rm -rv "$webroot"
+			echo -e $COL_RED'Web root directory deleted.'$COL_RESET
+		else
+			echo -e 'Web root directory preserved.'
+		fi
+	else
+		echo -e $COL_YELLOW'Web root directory was not found. Ignored.'$COL_RESET
+	fi
+
+	### show the finished message
+	echo -e $COL_GREEN"Success!$COL_RESET The virtual host for "$COL_CYAN$domain$COL_RESET" was deleted."
+	graceful_exit
+fi
+
+
+#########################
+#   CREATION ROUTINE	#
+#########################
+if [ "$action" == "create"  ]; then
+
+	while [ "$domain" == ""  ]
+	do
+		echo -e "Virtual host domain to $action (e.g. $fakeDomain):"
+		read  domain
+	done
+	echo -e "Virtual host selected for "$COL_GREEN"creation"$COL_RESET": "$COL_CYAN"$domain"$COL_RESET
+
+	### check if domain already exists
+	if [ -e $sitesAvailable$domain ]; then
+		echo -e $COL_RED'This domain already exists. Perhaps you wanted to delete it?\nExiting...'$COL_RESET
+		graceful_exit
+	fi
+
+	if [ "$port" == ""  ]; then
+		read -p "Please provide a port or press enter for default [$defaultPort]: " port
+		port=${port:-$defaultPort}
+		echo -e "Using port: "$COL_BLUE$port$COL_RESET
+	fi
+
 	if [ "$octal" == ""  ]; then
-		read -p "Please provide a vlaue for folder permissions [$defaultPerms]: " octal
+		read -p "Please provide a value for folder permissions or press enter for default [$defaultPerms]: " octal
 		octal=${octal:-$defaultPerms}
-		echo -e $COL_BLUE"Using "$octal" for chmod"$COL_RESET
+		echo -e "Using "$COL_BLUE$octal$COL_RESET" for chmod"
 	fi
 
 	if [ "$owner" == "" ]; then
-		owner=$(whoami | awk '{print $1}')
-		echo -e $COL_YELLOW'No owner given, setting file ownership to: '$owner$COL_RESET
+		read -p "Enter a user to set as the owner for files inside the web root [$defaultOwner]: " owner
+		owner=${owner:-$defaultOwner}
+		echo -e "Owner: "$COL_BLUE$owner$COL_RESET
 	fi
 
 	if [ "$group" == "" ]; then
-		group=$defaultGroup
-		echo -e $COL_YELLOW'No group given, setting group ownership to: '$group$COL_RESET
+		read -p "Enter a group to set for files inside the web root [$defaultGroup]: " group
+		group=${group:-$defaultGroup}
+		echo -e "Group: "$COL_BLUE$group$COL_RESET
 	fi
-fi
 
-if [ "$webroot" == "" ]; then
-	webroot=${domain//./}
-fi
+#	if [ "$webroot" == "" ]; then
+#		webroot=${domain//./}
+#	fi
+	if [ "$webroot" == "" ]; then
+		read -p "Specify the web root path for $domain or hit enter for default [$defaultWebroot$domain/public_html/]: " webroot
+		webroot=${webroot:-$defaultWebroot$domain/public_html/}
+		echo -e "Web root: "$COL_BLUE$webroot$COL_RESET"\n"
+	fi
 
-if [ "$action" == 'create' ]
-	then
-		### check if domain already exists
-		if [ -e $sitesAvailable$domain ]; then
-			echo -e 'This domain already exists.\nPlease Perhaps you wanted to delete it?'
-			graceful_exit
+	### check if directory exists or not
+	if ! [ -d $webroot ]; then
+		### create the directory
+		mkdir -vp $webroot
+		### give permission to root dir
+		chmod -v $octal $webroot
+		### write test file in the new domain dir
+		if ! echo "<?php echo phpinfo(); ?>" > $webroot"phpinfo.php"
+		then
+			echo $COL_RED"ERROR:"$COL_RESET" Not able to write in file "$webroot"phpinfo.php. Please check permissions."
+			exit;
+		else
+			echo "Added content to "$webroot"phpinfo.php."
 		fi
+	fi
 
-		### check if directory exists or not
-		if ! [ -d $userDir$webroot ]; then
-			### create the directory
-			mkdir $userDir$webroot
-			### give permission to root dir
-			chmod $octal $userDir$webroot
-			### write test file in the new domain dir
-			if ! echo "<?php echo phpinfo(); ?>" > $userDir$webroot/phpinfo.php
-			then
-				echo "ERROR: Not able to write in file "$userDir"/"$webroot"/phpinfo.php. Please check permissions."
-				exit;
-			else
-				echo "Added content to "$userDir$webroot"/phpinfo.php."
-			fi
-		fi
+	### create virtual host rules file
+	if ! echo "server {
+listen   $port;
+root $webroot;
+index index.php index.html index.htm;
+server_name $domain;
 
-		### create virtual host rules file
-		if ! echo "server {
-	listen   $port;
-	root $userDir$webroot;
-	index index.php index.html index.htm;
-	server_name $domain;
+# serve static files directly
+location ~* \.(jpg|jpeg|gif|css|png|js|ico|html)$ {
+	access_log off;
+	expires max;
+}
 
-	# serve static files directly
-	location ~* \.(jpg|jpeg|gif|css|png|js|ico|html)$ {
-		access_log off;
-		expires max;
-	}
+# removes trailing slashes (prevents SEO duplicate content issues)
+#if (!-d \$request_filename) {
+#	rewrite ^/(.+)/\$ /\$1 permanent;
+#}
 
-	# removes trailing slashes (prevents SEO duplicate content issues)
-	if (!-d \$request_filename) {
-		rewrite ^/(.+)/\$ /\$1 permanent;
-	}
+# unless the request is for a valid file (image, js, css, etc.), send to bootstrap
+if (!-e \$request_filename) {
+	rewrite ^/(.*)\$ /index.php?/\$1 last;
+	break;
+}
 
-	# unless the request is for a valid file (image, js, css, etc.), send to bootstrap
-	if (!-e \$request_filename) {
-		rewrite ^/(.*)\$ /index.php?/\$1 last;
-		break;
-	}
+# removes trailing 'index' from all controllers
+if (\$request_uri ~* index/?\$) {
+	rewrite ^/(.*)/index/?\$ /\$1 permanent;
+}
 
-	# removes trailing 'index' from all controllers
-	if (\$request_uri ~* index/?\$) {
-		rewrite ^/(.*)/index/?\$ /\$1 permanent;
-	}
+# catch all
+error_page 404 /index.php;
 
-	# catch all
-	error_page 404 /index.php;
+location ~ \.php$ {
+	fastcgi_split_path_info ^(.+\.php)(/.+)\$;
+	fastcgi_pass 127.0.0.1:9000;
+	fastcgi_index index.php;
+	include fastcgi_params;
+}
 
-	location ~ \.php$ {
-		fastcgi_split_path_info ^(.+\.php)(/.+)\$;
-		fastcgi_pass 127.0.0.1:9000;
-		fastcgi_index index.php;
-		include fastcgi_params;
-	}
-
-	location ~ /\.ht {
-		deny all;
-	}
+location ~ /\.ht {
+	deny all;
+}
 
 }" > $sitesAvailable$domain
-		then
-			echo -e "ERROR creating $sitesAvailabledomain file"
-			exit;
-		else
-			echo -e '\nNew Virtual Host Created\n'
-		fi
-
-		### Add domain in /etc/hosts
-		if ! echo "127.0.0.1	$domain" >> /etc/hosts
-		then
-			echo "ERROR: Not able write to /etc/hosts"
-			exit;
-		else
-			echo -e "Host added to /etc/hosts file \n"
-		fi
-
-		if [ "$owner" == ""  ]; then
-			chown -R $(whoami):$(whoami) "$rootdir"
-		else
-			chown -R $owner:$group "$rootdir"
-		fi
-
-		### enable website
-		ln -s $sitesAvailable$domain $sitesEnable$domain
-
-		### restart Nginx
-		service nginx restart
-
-		### show the finished message
-		echo -e $COL_GREEN"Complete! \nYou now have a new nginx Virtual Host. \nYour new host is: http://"$domain" \nAnd it is located at $rootdir"$COL_RESET
-		exit;
+	then
+		echo -e $COL_RED"ERROR creating $sitesAvailable$domain file\nExiting..."$COL_RESET
+		graceful_exit
 	else
-		### check whether domain already exists
-		if ! [ -e $sitesAvailable$domain ]; then
-			echo -e $COL_RED'The virtual host "'$domain'" does not exist.'$COL_RESET'\nExiting...'
-			graceful_exit
-		else
-			### Delete domain in /etc/hosts
-			newhost=${domain//./\\.}
-			sed -i "/$newhost/d" /etc/hosts
+		echo -e '\nVirtual host created.\n'
+	fi
 
-			### disable website
-			rm $sitesEnable$domain
+	### Add domain in /etc/hosts
+	if ! echo "127.0.0.1	$domain" >> /etc/hosts
+	then
+		echo $COL_RED"ERROR: Not able write to /etc/hosts\nExiting..."$COL_RESET
+		graceful_exit
+	else
+		echo -e "Host added to /etc/hosts file \n"
+	fi
 
-			### restart Nginx
-			service nginx restart
+	### set ownership
+	chown -R $owner:$group "$webroot"
 
-			### Delete virtual host rules files
-			rm $sitesAvailable$domain
-		fi
+	### enable website
+	ln -s $sitesAvailable$domain $sitesEnable$domain
 
-		### check if directory exists or not
-		if [ -d $userDir$webroot ]; then
-			echo -e "Really delete all files under $rootdir? (y/n)"
-			read deldir
+	### restart Nginx
+	service nginx restart
 
-			if [ "$deldir" == 'y' -o "$deldir" == 'Y' ]; then
-				### Delete the directory
-				rm -rv "$rootdir"
-				echo -e 'Directory deleted.'
-			else
-				echo -e 'Host directory preserved.'
-			fi
-		else
-			echo -e 'Host directory not found. Ignored.'
-		fi
-
-		### show the finished message
-		echo -e "Complete!\nYou just removed Virtual Host "$domain
-		exit 0;
+	### show the finished message
+	echo -e $COL_GREEN"Complete! "$COL_RESET"You now have a new nginx virtual host: "$COL_CYAN"http://"$domain$COL_RESET" located at $webroot"
+	exit;
 fi
 
 graceful_exit
