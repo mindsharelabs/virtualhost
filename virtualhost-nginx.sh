@@ -33,6 +33,14 @@ COL_BLUE=$ESC_SEQ"34;01m"
 COL_MAGENTA=$ESC_SEQ"35;01m"
 COL_CYAN=$ESC_SEQ"36;01m"
 
+fakeDomain='example.dev'
+defaultWebroot='/var/www/'
+defaultPort="80"
+defaultGroup="www-data"
+defaultPerms=755
+defaultNginxPath="/etc/nginx/"
+defaultOwner=$(whoami | awk '{print $1}')
+
 clean_up() { # Perform pre-exit housekeeping
 	return
 }
@@ -64,11 +72,16 @@ usage() {
 	echo -e "Usage: $PROGNAME [-h|--help] [-a|--action create|delete] [-d|--domain $fakeDomain]"
 }
 
-help_message() {
+program_title() {
 	echo
-	echo -e $COL_BLUE"============================="$COL_RESET
-	echo -e $COL_CYAN" Manage nginx virtual hosts"$COL_RESET
-	echo -e $COL_BLUE"============================="$COL_RESET
+	echo -e $COL_BLUE"================================"$COL_RESET
+	echo -e $COL_CYAN"   nginx virtual host manager"$COL_RESET
+	echo -e $COL_BLUE"================================"$COL_RESET
+	echo
+}
+
+help_message() {
+	program_title
 	cat <<- _EOF_
 	$PROGNAME ver. $VERSION
 
@@ -77,12 +90,12 @@ help_message() {
 	Options:
 	-h, --help	Display this help message and exit.
 	-a, --action	[create | delete] Create or delete a virtual host.
-	-o, --owner 	Web server username. Default root
-	-g, --group 	Web server group. Default www-data
-	-p, --port 	Web server port. Default 80
-	-w, --webroot 	Web server root path. Default /var/www/domain
-	--octal 	Web server octal permissions for folders. Default 755
-	--nginx 	Web server path. Default /etc/nginx/
+	-o, --owner 	Web server username. Default ${defaultOwner}
+	-g, --group 	Web server group. Default ${defaultGroup}
+	-p, --port 	Web server port. Default ${defaultPort}
+	-w, --webroot 	Web server root path. Default ${defaultWebroot}${fakeDomain}
+	--octal 	Web server octal permissions for folders. Default ${defaultPerms}
+	--nginx 	Web server path. Default ${defaultNginxPath}
 
 	NOTE: You must be the superuser to run this script.
 
@@ -150,14 +163,6 @@ if [[ $(id -u) != 0 ]]; then
 fi
 
 # Main logic
-fakeDomain='example.dev'
-defaultWebroot='/var/www/'
-defaultPort="80"
-defaultGroup="www-data"
-defaultPerms=755
-defaultNginxPath="/etc/nginx/"
-defaultOwner=$(whoami | awk '{print $1}')
-
 
 if [ "$action" != 'create' ] && [ "$action" != 'delete' ]
 	then
@@ -165,6 +170,8 @@ if [ "$action" != 'create' ] && [ "$action" != 'delete' ]
 		echo -e $PROGNAME" -a "$COL_CYAN"create"$COL_RESET
 		echo -e $PROGNAME" -a "$COL_CYAN"delete"$COL_RESET
 		exit 1;
+	else
+		program_title
 fi
 
 if [ "$nginxPath" == "" ]; then
@@ -188,7 +195,7 @@ if [ "$action" == "delete"  ]; then
 	echo -e "Select a virtual host to "$COL_RED"delete"$COL_RESET": "
 	shopt -s nullglob # causes the array to be empty if there are no matched
 	hostsAvail=($sitesAvailable*)
-	PS3='Enter a number for the virtual host to delete: '
+	PS3='Enter the number for the virtual host to delete: '
 	hostsAvail=("${hostsAvail[@]}" "Exit without deleting any virtual hosts.")
 	select FILENAME in "${hostsAvail[@]}"
 	do
@@ -200,7 +207,9 @@ if [ "$action" == "delete"  ]; then
 			*)
 				strlen=${#sitesAvailable}
 				domain=${FILENAME:$strlen} # trim the path from the domain
+				echo
 				echo -e "Virtual host selected for "$COL_RED"deletion"$COL_RESET": "$COL_CYAN"$domain"$COL_RESET
+				echo
 				break
 			;;
 		esac
@@ -220,27 +229,29 @@ if [ "$action" == "delete"  ]; then
 		graceful_exit
 	else
 		### Delete domain in /etc/hosts
-		echo -e "Removing $domain from /etc/hosts"
+		echo -e $COL_YELLOW"Removing $domain from /etc/hosts"$COL_RESET"\n"
 		newhost=${domain//./\\.}
 		sed -i "/$newhost/d" /etc/hosts
 
 		### disable website, if enabled
 		if [ -e "$sitesEnable$domain" ]; then
-			echo -e "Disabling virtual host: "$domain
+			echo -e $COL_YELLOW"Disabling virtual host: "$COL_RESET$domain
 			rm -v "$sitesEnable$domain"
+			echo
 		fi
 
 		### restart Nginx
-		echo -e "Restarting nginx"
+		echo -e $COL_YELLOW"Restarting nginx"$COL_RESET
 		service nginx restart
 
 		### Delete virtual host rules files
-		rm $FILENAME
+		rm -v $FILENAME
+		echo
 	fi
 
 	### check if directory exists or not
 	if [ -d $webroot ]; then
-		echo -e $COL_MAGENTA"Really delete all files under $webroot? (y/n)"$COL_RESET
+		echo -e $COL_RED"Really delete all files under $webroot? (y/n)"$COL_RESET
 		read deldir
 
 		if [ "$deldir" == 'y' -o "$deldir" == 'Y' ]; then
@@ -255,7 +266,9 @@ if [ "$action" == "delete"  ]; then
 	fi
 
 	### show the finished message
+	echo
 	echo -e $COL_GREEN"Success!$COL_RESET The virtual host for "$COL_CYAN$domain$COL_RESET" was deleted."
+	echo
 	graceful_exit
 fi
 
@@ -329,46 +342,46 @@ if [ "$action" == "create"  ]; then
 
 	### create virtual host rules file
 	if ! echo "server {
-listen   $port;
-root $webroot;
-index index.php index.html index.htm;
-server_name $domain;
+	listen   $port;
+	root $webroot;
+	index index.php index.html index.htm;
+	server_name $domain;
 
-# serve static files directly
-location ~* \.(jpg|jpeg|gif|css|png|js|ico|html)$ {
-	access_log off;
-	expires max;
-}
+	# serve static files directly
+	location ~* \.(jpg|jpeg|gif|css|png|js|ico|html)$ {
+		access_log off;
+		expires max;
+	}
 
-# removes trailing slashes (prevents SEO duplicate content issues)
-#if (!-d \$request_filename) {
-#	rewrite ^/(.+)/\$ /\$1 permanent;
-#}
+	# removes trailing slashes (prevents SEO duplicate content issues)
+	#if (!-d \$request_filename) {
+	#	rewrite ^/(.+)/\$ /\$1 permanent;
+	#}
 
-# unless the request is for a valid file (image, js, css, etc.), send to bootstrap
-if (!-e \$request_filename) {
-	rewrite ^/(.*)\$ /index.php?/\$1 last;
-	break;
-}
+	# unless the request is for a valid file (image, js, css, etc.), send to bootstrap
+	if (!-e \$request_filename) {
+		rewrite ^/(.*)\$ /index.php?/\$1 last;
+		break;
+	}
 
-# removes trailing 'index' from all controllers
-if (\$request_uri ~* index/?\$) {
-	rewrite ^/(.*)/index/?\$ /\$1 permanent;
-}
+	# removes trailing 'index' from all controllers
+	if (\$request_uri ~* index/?\$) {
+		rewrite ^/(.*)/index/?\$ /\$1 permanent;
+	}
 
-# catch all
-error_page 404 /index.php;
+	# catch all
+	error_page 404 /index.php;
 
-location ~ \.php$ {
-	fastcgi_split_path_info ^(.+\.php)(/.+)\$;
-	fastcgi_pass 127.0.0.1:9000;
-	fastcgi_index index.php;
-	include fastcgi_params;
-}
+	location ~ \.php$ {
+		fastcgi_split_path_info ^(.+\.php)(/.+)\$;
+		fastcgi_pass 127.0.0.1:9000;
+		fastcgi_index index.php;
+		include fastcgi_params;
+	}
 
-location ~ /\.ht {
-	deny all;
-}
+	location ~ /\.ht {
+		deny all;
+	}
 
 }" > $sitesAvailable$domain
 	then
@@ -397,7 +410,8 @@ location ~ /\.ht {
 	service nginx restart
 
 	### show the finished message
-	echo -e $COL_GREEN"Complete! "$COL_RESET"You now have a new nginx virtual host: "$COL_CYAN"http://"$domain$COL_RESET" located at $webroot"
+	echo -e $COL_GREEN"Complete! "$COL_RESET"Your new nginx virtual host is ready:\nURL: "$COL_CYAN"http://"$domain$COL_RESET"\nWeb root: $COL_BLUE$webroot$COL_RESET\nConfig file: $COL_BLUE$sitesAvailable$domain$COL_RESET"
+	echo
 	exit;
 fi
 
