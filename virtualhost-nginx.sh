@@ -17,7 +17,7 @@
 # more details.
 
 # Revision history:
-# 2015-01-28 misc updates for SSL setups and Digital Ocean PHP5-fpm installs
+# 2015-01-28 misc updates for SSL setups and Digital Ocean PHP5-fpm installs, added sslport option, HHVM example, forward secrecy
 # 2014-12-08 Created by new_script ver. 3.3
 # ---------------------------------------------------------------------------
 
@@ -37,6 +37,8 @@ COL_CYAN=$ESC_SEQ"36;01m"
 fakeDomain='example.dev'
 defaultWebroot='/var/www/'
 defaultPort="80"
+defaultSSLPort="443"
+defaultServer="false"
 defaultGroup="www-data"
 defaultPerms=755
 defaultNginxPath="/etc/nginx/"
@@ -91,10 +93,13 @@ help_message() {
 	Options:
 	-h, --help	Display this help message and exit.
 	-a, --action	[create | delete] Create or delete a virtual host.
+	-d, --domain 	Domain host name.
 	-o, --owner 	Web server username. Default ${defaultOwner}
 	-g, --group 	Web server group. Default ${defaultGroup}
 	-p, --port 	Web server port. Default ${defaultPort}
+	-s, --sslport 	Web server SSL port. Default ${defaultSSLPort}
 	-w, --webroot 	Web server root path. Default ${defaultWebroot}${fakeDomain}
+	--default 	[true | false] Set this host to be the default_server. Default ${defaultServer}
 	--octal 	Web server octal permissions for folders. Default ${defaultPerms}
 	--nginx 	Web server path. Default ${defaultNginxPath}
 
@@ -140,10 +145,19 @@ while [[ -n $1 ]]; do
 			#echo "Port: $1";
 			create="$1" ;
 			port=$1;;
+		-s | --sslport)
+			shift;
+			#echo "SSL Port: $1";
+			create="$1" ;
+			sslport=$1;;
 		--octal)
 			shift;
 			create="$1" ;
 			octal=$1;;
+		--default)
+			shift;
+			create="$1" ;
+			ds=$1;;
 		--nginx)
 			shift;
 			#echo "nginx path: $1";
@@ -292,10 +306,29 @@ if [ "$action" == "create"  ]; then
 		graceful_exit
 	fi
 
+	if [ "$ds" == ""  ]; then
+		read -p "Use this virtual host as the server default? [$defaultServer]: " ds
+		ds=${ds:-$defaultServer}
+		echo -e "default_server: "$COL_BLUE$ds$COL_RESET
+		
+		if [ "$ds" == "true"  ]; then
+			ds="default_server"
+		else
+			ds=""
+		fi
+	fi
+
 	if [ "$port" == ""  ]; then
 		read -p "Please provide a port or press enter for default [$defaultPort]: " port
 		port=${port:-$defaultPort}
 		echo -e "Using port: "$COL_BLUE$port$COL_RESET
+	fi
+	
+	
+	if [ "$sslport" == ""  ]; then
+		read -p "Please provide an SSL port or press enter for default [$defaultSSLPort]: " sslport
+		sslport=${sslport:-$defaultSSLPort}
+		echo -e "Using SSL port: "$COL_BLUE$sslport$COL_RESET
 	fi
 
 	if [ "$octal" == ""  ]; then
@@ -343,13 +376,24 @@ if [ "$action" == "create"  ]; then
 
 	### create virtual host rules file
 	if ! echo "server {
-	listen   $port;
-	#listen   [::]:$port default_server ipv6only=on; ## listen for ipv6
-	#listen   443 default_server ssl;
+	listen $port $ds; # listen for ipv4; this line is default and implied
+	listen [::]:$port $ds ipv6only=on; # listen for ipv6
+
+	# SSL configuration
+	#listen $sslport $ds ssl;
+	#listen [::]:$sslport $ds ssl ipv6only=on;
+
+	# configure Forward Secrecy, see: http://goo.gl/563XnK
+	#ssl_protocols TLSv1 TLSv1.1 TLSv1.2;
+	#ssl_prefer_server_ciphers on;
+	#ssl_ciphers \"EECDH+ECDSA+AESGCM EECDH+aRSA+AESGCM EECDH+ECDSA+SHA384 EECDH+ECDSA+SHA256 EECDH+aRSA+SHA384 EECDH+aRSA+SHA256 EECDH+aRSA+RC4 EECDH EDH+aRSA RC4 !aNULL !eNULL !LOW !3DES !MD5 !EXP !PSK !SRP !DSS\";
 	
 	root $webroot;
 	index index.php index.html index.htm;
 	server_name $domain;
+	
+	access_log /var/log/nginx/access_$domain.log;
+	error_log /var/log/nginx/error_$domain.log;
 	
 	#ssl_certificate /etc/ssl/$domain.crt;
 	#ssl_certificate_key /etc/ssl/$domain.key;
@@ -391,6 +435,15 @@ if [ "$action" == "create"  ]; then
 		fastcgi_index index.php;
 		include fastcgi_params;
 	}
+	
+	# HHVM example configuration
+	#location ~ \.(hh|php)$ {
+	#	fastcgi_keep_conn on;
+	#	fastcgi_pass   127.0.0.1:9000;
+	#	fastcgi_index  index.php;
+	#	fastcgi_param  SCRIPT_FILENAME \$document_root\$fastcgi_script_name;
+	#	include        fastcgi_params;
+	#}
 
 	location ~ /\.ht {
 		deny all;
