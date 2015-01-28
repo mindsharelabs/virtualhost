@@ -3,7 +3,7 @@
 # ---------------------------------------------------------------------------
 # virtualhost-nginx.sh - Manage nginx virtual hosts
 
-# Copyright 2014, Mindshare Labs, <info@mindsharelabs.com>
+# Copyright 2015, Mindshare Labs, <info@mindsharelabs.com>
 
 # This program is free software: you can redistribute it and/or modify
 # it under the terms of the GNU General Public License as published by
@@ -17,11 +17,12 @@
 # more details.
 
 # Revision history:
+# 2015-01-28 misc updates for SSL setups and Digital Ocean PHP5-fpm installs
 # 2014-12-08 Created by new_script ver. 3.3
 # ---------------------------------------------------------------------------
 
 PROGNAME=${0##*/}
-VERSION="0.1.1"
+VERSION="0.1.2"
 
 # Colors
 ESC_SEQ="\x1b["
@@ -343,9 +344,18 @@ if [ "$action" == "create"  ]; then
 	### create virtual host rules file
 	if ! echo "server {
 	listen   $port;
+	#listen   [::]:$port default_server ipv6only=on; ## listen for ipv6
+	#listen   443 default_server ssl;
+	
 	root $webroot;
 	index index.php index.html index.htm;
 	server_name $domain;
+	
+	#ssl_certificate /etc/ssl/$domain.crt;
+	#ssl_certificate_key /etc/ssl/$domain.key;
+	#if ($scheme = "http") {
+	#	return 301 https://\$server_name\$request_uri;
+	#}
 
 	# serve static files directly
 	location ~* \.(jpg|jpeg|gif|css|png|js|ico|html)$ {
@@ -373,8 +383,11 @@ if [ "$action" == "create"  ]; then
 	error_page 404 /index.php;
 
 	location ~ \.php$ {
-		fastcgi_split_path_info ^(.+\.php)(/.+)\$;
-		fastcgi_pass 127.0.0.1:9000;
+		fastcgi_split_path_info ^(.+\.php)(/.+)\$; # comment out for Digital Ocean php5-fpm
+		fastcgi_pass 127.0.0.1:9000; # comment out for Digital Ocean php5-fpm
+		#try_files $uri =404; # uncomment for Digital Ocean php5-fpm
+		#fastcgi_pass unix:/var/run/php5-fpm.sock; # uncomment for Digital Ocean php5-fpm
+		
 		fastcgi_index index.php;
 		include fastcgi_params;
 	}
