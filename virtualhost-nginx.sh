@@ -353,7 +353,7 @@ if [ "$action" == "create"  ]; then
 	
 	#ssl_certificate /etc/ssl/$domain.crt;
 	#ssl_certificate_key /etc/ssl/$domain.key;
-	#if ($scheme = "http") {
+	#if (\$scheme = \"http\") {
 	#	return 301 https://\$server_name\$request_uri;
 	#}
 
@@ -385,7 +385,7 @@ if [ "$action" == "create"  ]; then
 	location ~ \.php$ {
 		fastcgi_split_path_info ^(.+\.php)(/.+)\$; # comment out for Digital Ocean php5-fpm
 		fastcgi_pass 127.0.0.1:9000; # comment out for Digital Ocean php5-fpm
-		#try_files $uri =404; # uncomment for Digital Ocean php5-fpm
+		#try_files \$uri =404; # uncomment for Digital Ocean php5-fpm
 		#fastcgi_pass unix:/var/run/php5-fpm.sock; # uncomment for Digital Ocean php5-fpm
 		
 		fastcgi_index index.php;
