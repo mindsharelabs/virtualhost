@@ -5,25 +5,18 @@ Bash scripts to easily (interactively) create or delete Apache and nginx virtual
 
 ## Installation ##
 
-1. Download the script
-2. Apply permission to execute:
+Download the script and run:
 
-        sudo chmod +x virtualhost.sh
-        sudo chmod +x virtualhost-nginx.sh
-  
-3. Optional: if you want to use the script globally, then you need to copy the file to your /usr/local/bin directory, is better if you copy it without the .sh extension:
-
-        sudo cp virtualhost.sh /usr/local/bin/virtualhost
-        sudo cp virtualhost-nginx.sh /usr/local/bin/virtualhost-nginx
+`
+sudo chmod +x virtualhost.sh && sudo chmod +x virtualhost-nginx.sh sudo cp virtualhost.sh /usr/local/bin/virtualhost && sudo cp virtualhost-nginx.sh /usr/local/bin/virtualhost-nginx
+`
 
 ## nginx Usage ##
 
 Basic usage:
 
         sudo virtualhost-nginx -a create
-        
         sudo virtualhost-nginx -a delete
-        
         virtualhost-nginx --help
 
 Passing all parameters:
