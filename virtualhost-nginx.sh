@@ -428,12 +428,15 @@ if [ "$action" == "create"  ]; then
 	error_page 404 /index.php;
 
 	location ~ \.php$ {
-		fastcgi_split_path_info ^(.+\.php)(/.+)\$; # comment out for Digital Ocean php5-fpm
-		fastcgi_pass 127.0.0.1:9000; # comment out for Digital Ocean php5-fpm
-		#try_files \$uri =404; # uncomment for Digital Ocean php5-fpm
-		#fastcgi_pass unix:/var/run/php5-fpm.sock; # uncomment for Digital Ocean php5-fpm
+		#fastcgi_split_path_info ^(.+\.php)(/.+)\$; # for local / multip PHP versions development
+		#fastcgi_pass 127.0.0.1:9000; # for local / multip PHP versions development
+		
+		## for Digital Ocean / php5-fpm
+		try_files \$uri =404;
+		fastcgi_pass unix:/var/run/php5-fpm.sock; 
 		
 		fastcgi_index index.php;
+		fastcgi_param SCRIPT_FILENAME \$document_root\$fastcgi_script_name; # for Digital Ocean / php5-fpm
 		include fastcgi_params;
 	}
 	
