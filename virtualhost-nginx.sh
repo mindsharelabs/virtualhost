@@ -377,7 +377,7 @@ if [ "$action" == "create"  ]; then
 	### create virtual host rules file
 	if ! echo "server {
 	listen $port $ds; # listen for ipv4; this line is default and implied
-	listen [::]:$port $ds ipv6only=on; # listen for ipv6
+	#listen [::]:$port $ds ipv6only=on; # listen for ipv6
 
 	# SSL configuration
 	#listen $sslport $ds ssl;
